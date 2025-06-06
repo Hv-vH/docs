@@ -107,10 +107,12 @@ class Order(models.Model):
     TRADE_STATUS_PENDING = 0
     TRADE_STATUS_SUCCESS = 1
     TRADE_STATUS_FAILED = 2
+    TRADE_STATUS_REFUND = 3
     TRADE_STATUS_CHOICES = [
         (TRADE_STATUS_PENDING, '待交易'),
         (TRADE_STATUS_SUCCESS, '交易成功'),
         (TRADE_STATUS_FAILED, '交易失败'),
+        (TRADE_STATUS_REFUND, '退款中'),
     ]
 
     code = models.CharField(max_length=255, null=True, unique=True, verbose_name='订单号')
@@ -135,3 +137,28 @@ class Order(models.Model):
         if not self.trade_time:
             self.trade_time = timezone.now()
         super().save(*args, **kwargs)
+
+class Comment(models.Model):
+    """商品评论"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='comments', verbose_name='商品')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments', verbose_name='评论用户')
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='replies', verbose_name='父级评论')
+    content = models.CharField(max_length=255, verbose_name='评论内容')
+    create_time = models.DateTimeField(auto_now_add=True, null=True, verbose_name='评论时间')
+
+    class Meta:
+        verbose_name = '商品评论'
+        verbose_name_plural = '商品评论'
+        ordering = ['-create_time']
+
+    def __str__(self):
+        return f'{self.user.username} 评论 {self.product.name}: {self.content[:20]}...'
+
+    @property
+    def is_reply(self):
+        """判断是否为回复评论"""
+        return self.parent is not None
+
+    def get_replies(self):
+        """获取所有回复"""
+        return self.replies.all().order_by('create_time')
