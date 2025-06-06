@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+import time, random
+from django.utils import timezone
 
 class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True, null=True)
@@ -78,3 +80,58 @@ class Product(models.Model):
     def category_name(self):
         """获取分类名称"""
         return dict(self.CATEGORY_CHOICES).get(self.category_id, '未知分类')
+
+class Interaction(models.Model):
+    TYPE_BROWSE = 1
+    TYPE_FAVORITE = 2
+    TYPE_WANT = 3
+    TYPE_CHOICES = [
+        (TYPE_BROWSE, '浏览'),
+        (TYPE_FAVORITE, '收藏'),
+        (TYPE_WANT, '想要'),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interactions', verbose_name='用户')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='interactions', verbose_name='商品')
+    type = models.IntegerField(choices=TYPE_CHOICES, verbose_name='互动类型')
+    create_time = models.DateTimeField(verbose_name='创建时间')
+
+    class Meta:
+        verbose_name = '互动行为'
+        verbose_name_plural = '互动行为'
+        unique_together = ('user', 'product', 'type', 'create_time')
+
+    def __str__(self):
+        return f'{self.user.username} {self.get_type_display()} {self.product.name} @ {self.create_time}'
+
+class Order(models.Model):
+    TRADE_STATUS_PENDING = 0
+    TRADE_STATUS_SUCCESS = 1
+    TRADE_STATUS_FAILED = 2
+    TRADE_STATUS_CHOICES = [
+        (TRADE_STATUS_PENDING, '待交易'),
+        (TRADE_STATUS_SUCCESS, '交易成功'),
+        (TRADE_STATUS_FAILED, '交易失败'),
+    ]
+
+    code = models.CharField(max_length=255, null=True, unique=True, verbose_name='订单号')
+    detail = models.CharField(max_length=255, null=True, verbose_name='备注')
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, verbose_name='商品')
+    buy_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, verbose_name='购买时的价格')
+    trade_status = models.SmallIntegerField(choices=TRADE_STATUS_CHOICES, null=True, verbose_name='交易状态')
+    trade_time = models.DateTimeField(null=True, blank=True, verbose_name='交易时间')
+    create_time = models.DateTimeField(auto_now_add=True, null=True, verbose_name='创建时间')
+
+    class Meta:
+        verbose_name = '订单'
+        verbose_name_plural = '订单'
+        ordering = ['-create_time']
+
+    def __str__(self):
+        return self.code or f'订单{self.id}'
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = f"ORD{int(time.time())}{random.randint(1000,9999)}"
+        if not self.trade_time:
+            self.trade_time = timezone.now()
+        super().save(*args, **kwargs)

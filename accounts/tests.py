@@ -124,13 +124,124 @@ Content-Type: application/json
        "new_password": "新密码",
        "confirm_password": "确认新密码"
    }
+
+10.# 基础获取所有商品
+GET /api/products/
+
+11.# 搜索名称包含"手机"的商品
+GET /api/products/?search=手机
+
+12.# 获取分类ID为1且价格在100-1000之间的商品
+GET /api/products/?category=1&min_price=100&max_price=1000
+
+13# 获取可议价且新旧程度在7-10之间的商品
+GET /api/products/?is_bargain=true&min_old_level=7&max_old_level=10
+
+14. 编辑商品接口
+URL: /api/products/{id}/update/
+方法: PATCH 或 PUT
+描述: 更新指定ID的商品信息
+权限: 仅允许已登录用户编辑自己的商品
+请求头:
+Authorization: Token your_token_here
+Content-Type: application/json
+
+15.删除商品接口
+URL: /api/products/{id}/delete/
+方法: DELETE
+描述: 删除指定ID的商品
+权限: 仅允许已登录用户删除自己的商品
+请求头:
+Authorization: Token your_token_here
+
+16. 互动行为接口测试
+POST /api/interactions/
+{
+    "user_id": 1,
+    "product_id": 2,
+    "type": 2,
+    "create_time": "2025-03-25T14:15:00"
+}
+预期响应:
+201 Created
+{
+    "user_id": 1,
+    "product_id": 2,
+    "type": 2,
+    "create_time": "2025-03-25T14:15:00"
+}
+
+17. 获取我想要的商品接口测试
+GET /api/interactions/want/
+Headers:
+Authorization: Token your_token_here
+预期响应:
+200 OK
+[
+    {
+        "id": 2,
+        "name": "商品A",
+        "category_id": 1,
+        "category_name": "书本",
+        "cover_list": "...",
+        "detail": "...",
+        "inventory": 10,
+        "is_bargain": false,
+        "old_level": 9,
+        "price": 100.0,
+        "user_id": 1,
+        "create_at": "2025-03-25T14:15:00"
+    },
+    ...
+]
+
+异常场景：
+- 缺少必填字段，预期 400 Bad Request
+- type 非法，预期 400 Bad Request
+
+18. 创建订单接口测试
+POST /accounts/orders/create/
+Headers:
+Authorization: Token your_token_here
+Content-Type: application/json
+请求体示例：
+Apply to tests.py
+{
+    "detail": "买家留言：请尽快发货",
+    "product": 1,
+    "buy_price": 99.99,
+    "trade_status": 0
+}
+预期响应:
+201 Created
+Apply to tests.py
+{
+    "id": 5,
+    "code": "ORD17172345671234",
+    "detail": "买家留言：请尽快发货",
+    "product": 1,
+    "buy_price": "99.99",
+    "trade_status": 0,
+    "trade_time": "2024-06-01T12:00:00Z",
+    "create_time": "2024-06-01T12:00:00Z"
+}
+字段说明：
+code：订单号，后端自动生成
+trade_time：交易时间，后端自动生成
+create_time：创建时间，后端自动生成
+其它字段见请求体
+异常场景：
+缺少必填字段（如 product、buy_price），预期 400 Bad Request
+product 不存在，预期 400 Bad Request
+buy_price 非法，预期 400 Bad Request
+
 """
 
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import User
+from .models import User, Interaction, Product
 
 class AccountsApiTests(TestCase):
     def setUp(self):
@@ -241,3 +352,51 @@ class AccountsApiTests(TestCase):
         """测试未授权访问"""
         response = self.client.get(self.user_info_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_interaction(self):
+        """测试用户对商品进行互动行为（浏览/收藏/想要）"""
+        # 创建用户和商品
+        user = User.objects.create_user(username='user1', email='user1@example.com', password='pass123456')
+        product = Product.objects.create(name='测试商品', user=user)
+        url = reverse('interaction-create')
+        data = {
+            'user_id': user.id,
+            'product_id': product.id,
+            'type': 2,  # 收藏
+            'create_time': '2025-03-25T14:15:00'
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Interaction.objects.count(), 1)
+        interaction = Interaction.objects.first()
+        self.assertEqual(interaction.user, user)
+        self.assertEqual(interaction.product, product)
+        self.assertEqual(interaction.type, 2)
+
+    def test_create_interaction_missing_field(self):
+        """测试缺少必填字段时的错误"""
+        user = User.objects.create_user(username='user2', email='user2@example.com', password='pass123456')
+        product = Product.objects.create(name='测试商品2', user=user)
+        url = reverse('interaction-create')
+        data = {
+            'user_id': user.id,
+            # 'product_id' 缺失
+            'type': 1,
+            'create_time': '2025-03-25T14:15:00'
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_interaction_invalid_type(self):
+        """测试无效type类型"""
+        user = User.objects.create_user(username='user3', email='user3@example.com', password='pass123456')
+        product = Product.objects.create(name='测试商品3', user=user)
+        url = reverse('interaction-create')
+        data = {
+            'user_id': user.id,
+            'product_id': product.id,
+            'type': 99,  # 非法类型
+            'create_time': '2025-03-25T14:15:00'
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, 400)

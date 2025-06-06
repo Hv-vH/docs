@@ -3,7 +3,14 @@ from .views import (
     RegisterView, LoginView, UserInfoView, UpdateUserView, 
     UploadProfilePictureView, ChangePasswordView,
     CreateProductView, ListUserProductsView, ProductCategoriesView,
-    UploadProductImageView, ListAllProductsView
+    UploadProductImageView, ListAllProductsView, UserDetailView,
+    ProductDetailView, UpdateProductView, DeleteProductView,
+    InteractionCreateView, WantProductListView,
+    ProductInteractionStatView, FavoriteProductListView,
+    BrowsedProductListView,
+    UnfavoriteProductView,
+    IsFavoriteProductView,
+    OrderCreateView
 )
 
 urlpatterns = [
@@ -18,4 +25,16 @@ urlpatterns = [
     path('products/categories/', ProductCategoriesView.as_view(), name='product-categories'),
     path('products/upload-image/', UploadProductImageView.as_view(), name='upload-product-image'),
     path('products/', ListAllProductsView.as_view(), name='list-all-products'),
+    path('users/<int:id>/', UserDetailView.as_view(), name='user-detail'),
+    path('products/<int:id>/', ProductDetailView.as_view(), name='product-detail'),
+    path('products/<int:id>/update/', UpdateProductView.as_view(), name='update-product'),
+    path('products/<int:id>/delete/', DeleteProductView.as_view(), name='delete-product'),
+    path('interactions/', InteractionCreateView.as_view(), name='interaction-create'),
+    path('interactions/want/', WantProductListView.as_view(), name='want-product-list'),
+    path('interactions/stat/', ProductInteractionStatView.as_view(), name='product-interaction-stat'),
+    path('interactions/favorite/', FavoriteProductListView.as_view(), name='favorite-product-list'),
+    path('interactions/browsed/', BrowsedProductListView.as_view(), name='browsed-product-list'),
+    path('interactions/unfavorite/', UnfavoriteProductView.as_view(), name='unfavorite-product'),
+    path('interactions/is-favorite/', IsFavoriteProductView.as_view(), name='is-favorite-product'),
+    path('orders/create/', OrderCreateView.as_view(), name='order-create'),
 ]

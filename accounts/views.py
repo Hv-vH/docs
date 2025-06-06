@@ -9,10 +9,10 @@ from django.conf import settings
 from django.db.models import Q
 import os
 from datetime import datetime
-from .models import User, Product
+from .models import User, Product, Interaction, Order
 from .serializers import (
     UserSerializer, RegisterSerializer, LoginSerializer, 
-    UserUpdateSerializer, ProductSerializer
+    UserUpdateSerializer, ProductSerializer, InteractionSerializer, OrderSerializer
 )
 
 class RegisterView(generics.CreateAPIView):
@@ -294,3 +294,143 @@ class ListAllProductsView(generics.ListAPIView):
             queryset = queryset.filter(old_level__lte=int(max_old_level))
             
         return queryset
+
+class UserDetailView(generics.RetrieveAPIView):
+    """根据用户ID获取用户信息"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = UserSerializer
+    queryset = User.objects.all()
+    lookup_field = 'id'
+
+class ProductDetailView(generics.RetrieveAPIView):
+    """根据商品ID获取商品详细信息"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+    lookup_field = 'id'
+
+class UpdateProductView(generics.UpdateAPIView):
+    """更新商品信息"""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """只允许用户更新自己的商品"""
+        return Product.objects.filter(user=self.request.user)
+    
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # 处理cover_list字段，确保它是字符串格式
+        if 'cover_list' in request.data and isinstance(request.data['cover_list'], list):
+            request.data['cover_list'] = ','.join(request.data['cover_list'])
+            
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+class DeleteProductView(generics.DestroyAPIView):
+    """删除商品"""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """只允许用户删除自己的商品"""
+        return Product.objects.filter(user=self.request.user)
+    
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response({
+            'message': '商品已成功删除'
+        }, status=status.HTTP_200_OK)
+
+class InteractionCreateView(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = InteractionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class WantProductListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        interactions = Interaction.objects.filter(user=request.user, type=3)
+        product_ids = interactions.values_list('product_id', flat=True)
+        products = Product.objects.filter(id__in=product_ids)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+
+class ProductInteractionStatView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        product_id = request.query_params.get('product_id')
+        if not product_id:
+            return Response({'error': '缺少product_id参数'}, status=status.HTTP_400_BAD_REQUEST)
+        want_count = Interaction.objects.filter(product_id=product_id, type=3).count()
+        browse_count = Interaction.objects.filter(product_id=product_id, type=1).count()
+        favorite_count = Interaction.objects.filter(product_id=product_id, type=2).count()
+        return Response({
+            'product_id': int(product_id),
+            'want_count': want_count,
+            'browse_count': browse_count,
+            'favorite_count': favorite_count
+        })
+
+class FavoriteProductListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        interactions = Interaction.objects.filter(user=request.user, type=2)
+        product_ids = interactions.values_list('product_id', flat=True)
+        products = Product.objects.filter(id__in=product_ids)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+
+class BrowsedProductListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        interactions = Interaction.objects.filter(user=request.user, type=1)  # type=1 表示浏览
+        product_ids = interactions.values_list('product_id', flat=True)
+        products = Product.objects.filter(id__in=product_ids)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+
+class UnfavoriteProductView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        product_id = request.data.get('product_id')
+        if not product_id:
+            return Response({'error': '缺少product_id参数'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            interaction = Interaction.objects.get(user=request.user, product_id=product_id, type=2)
+            interaction.delete()
+            return Response({'message': '已取消收藏'}, status=status.HTTP_200_OK)
+        except Interaction.DoesNotExist:
+            return Response({'error': '未找到收藏记录'}, status=status.HTTP_404_NOT_FOUND)
+
+class IsFavoriteProductView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        product_id = request.query_params.get('product_id')
+        if not product_id:
+            return Response({'error': '缺少product_id参数'}, status=status.HTTP_400_BAD_REQUEST)
+        is_favorite = Interaction.objects.filter(user=request.user, product_id=product_id, type=2).exists()
+        return Response({'is_favorite': is_favorite})
+
+class OrderCreateView(generics.CreateAPIView):
+    queryset = Order.objects.all()
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated]
