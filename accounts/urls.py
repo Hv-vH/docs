@@ -15,7 +15,8 @@ from .views import (
     BuyOrderListView,
     SellOrderListView,
     ReviewOrderView,
-    RefundOrderView
+    RefundOrderView,
+    ReviewRefundView
 )
 
 urlpatterns = [
@@ -47,4 +48,5 @@ urlpatterns = [
     path('orders/sell/', SellOrderListView.as_view(), name='sell-orders'),
     path('orders/review/', ReviewOrderView.as_view(), name='review-order'),
     path('orders/refund/', RefundOrderView.as_view(), name='refund-order'),
+    path('orders/review/refund/', ReviewRefundView.as_view(), name='review-refund'),
 ]
