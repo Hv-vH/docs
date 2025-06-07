@@ -166,3 +166,33 @@ class CommentListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
         fields = ['id', 'product_id', 'user_id', 'username', 'parent_id', 'content', 'create_time']
+
+class OrderDetailSerializer(serializers.ModelSerializer):
+    """订单详情序列化器，包含商品信息"""
+    product_info = serializers.SerializerMethodField()
+    trade_status_display = serializers.CharField(source='get_trade_status_display', read_only=True)
+    buyer_id = serializers.IntegerField(source='buyer.id', read_only=True)
+    buyer_name = serializers.CharField(source='buyer.username', read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'code', 'detail', 'product', 'product_info',
+            'buyer_id', 'buyer_name', 'buy_price', 'trade_status', 
+            'trade_status_display', 'trade_time', 'create_time'
+        ]
+        read_only_fields = ['code', 'trade_time', 'create_time', 'buyer_id', 'buyer_name']
+
+    def get_product_info(self, obj):
+        """获取商品信息"""
+        if obj.product:
+            return {
+                'id': obj.product.id,
+                'name': obj.product.name,
+                'category_name': obj.product.category_name,
+                'cover_list': obj.product.cover_list,
+                'price': float(obj.product.price) if obj.product.price else None,
+                'user_id': obj.product.user.id,
+                'username': obj.product.user.username
+            }
+        return None

@@ -118,6 +118,7 @@ class Order(models.Model):
     code = models.CharField(max_length=255, null=True, unique=True, verbose_name='订单号')
     detail = models.CharField(max_length=255, null=True, verbose_name='备注')
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, verbose_name='商品')
+    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='buy_orders', verbose_name='买家')
     buy_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, verbose_name='购买时的价格')
     trade_status = models.SmallIntegerField(choices=TRADE_STATUS_CHOICES, null=True, verbose_name='交易状态')
     trade_time = models.DateTimeField(null=True, blank=True, verbose_name='交易时间')

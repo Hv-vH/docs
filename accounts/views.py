@@ -12,7 +12,7 @@ from datetime import datetime
 from .models import User, Product, Interaction, Order, Comment
 from .serializers import (
     UserSerializer, RegisterSerializer, LoginSerializer, 
-    UserUpdateSerializer, ProductSerializer, InteractionSerializer, OrderSerializer, CommentSerializer, CommentTreeSerializer
+    UserUpdateSerializer, ProductSerializer, InteractionSerializer, OrderSerializer, CommentSerializer, CommentTreeSerializer, OrderDetailSerializer
 )
 from rest_framework import serializers
 
@@ -432,9 +432,100 @@ class IsFavoriteProductView(APIView):
         return Response({'is_favorite': is_favorite})
 
 class OrderCreateView(generics.CreateAPIView):
+    """创建订单视图"""
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
+
+    def create(self, request, *args, **kwargs):
+        # 验证商品ID
+        product_id = request.data.get('product')
+        if not product_id:
+            return Response(
+                {'product': '必须提供商品ID'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {'product': '商品不存在'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except ValueError:
+            return Response(
+                {'product': '商品ID必须是有效的整数'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 验证购买价格
+        buy_price = request.data.get('buy_price')
+        if not buy_price:
+            return Response(
+                {'buy_price': '必须提供购买价格'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            buy_price = float(buy_price)
+            if buy_price <= 0:
+                raise ValueError
+        except ValueError:
+            return Response(
+                {'buy_price': '购买价格必须是大于0的数字'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 验证交易状态
+        trade_status = request.data.get('trade_status')
+        if trade_status is None:
+            return Response(
+                {'trade_status': '必须提供交易状态'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            trade_status = int(trade_status)
+            if trade_status not in dict(Order.TRADE_STATUS_CHOICES):
+                raise ValueError
+        except ValueError:
+            return Response(
+                {'trade_status': f'无效的交易状态。有效的状态为: {dict(Order.TRADE_STATUS_CHOICES)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 验证商品库存
+        if product.inventory is not None and product.inventory <= 0:
+            return Response(
+                {'product': '商品库存不足'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 验证不能购买自己的商品
+        if product.user == request.user:
+            return Response(
+                {'product': '不能购买自己的商品'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 创建订单数据
+        order_data = request.data.copy()
+        order_data['buyer'] = request.user.id  # 设置买家为当前用户
+
+        # 创建订单
+        serializer = self.get_serializer(data=order_data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        # 更新商品库存
+        if product.inventory is not None:
+            product.inventory -= 1
+            product.save()
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class CommentView(generics.ListCreateAPIView):
     """商品评论视图：支持创建评论和获取评论列表"""
@@ -497,3 +588,25 @@ class CommentView(generics.ListCreateAPIView):
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+class BuyOrderListView(generics.ListAPIView):
+    """获取用户购买的订单列表"""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = OrderDetailSerializer
+
+    def get_queryset(self):
+        """获取当前用户作为买家的所有订单"""
+        return Order.objects.filter(
+            buyer=self.request.user  # 通过买家字段关联到当前用户
+        ).select_related('product', 'product__user').order_by('-create_time')
+
+class SellOrderListView(generics.ListAPIView):
+    """获取用户卖出的订单列表"""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = OrderDetailSerializer
+
+    def get_queryset(self):
+        """获取当前用户作为卖家的所有订单"""
+        return Order.objects.filter(
+            product__user=self.request.user  # 通过商品关联到卖家
+        ).select_related('product', 'product__user', 'buyer').order_by('-create_time')
