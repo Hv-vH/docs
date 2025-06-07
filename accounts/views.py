@@ -691,3 +691,56 @@ class ReviewOrderView(APIView):
         # 返回更新后的订单信息
         serializer = OrderDetailSerializer(order)
         return Response(serializer.data)
+
+class RefundOrderView(APIView):
+    """申请退款视图"""
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
+
+    def post(self, request):
+        # 获取订单编号
+        order_id = request.data.get('order_id')
+        if not order_id:
+            return Response(
+                {'error': '必须提供订单编号'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            order_id = int(order_id)
+        except ValueError:
+            return Response(
+                {'error': '订单编号必须是有效的整数'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 获取订单
+        try:
+            order = Order.objects.select_related('product').get(id=order_id)
+        except Order.DoesNotExist:
+            return Response(
+                {'error': '订单不存在'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 验证是否是自己的订单
+        if order.buyer != request.user:
+            return Response(
+                {'error': '无权对此订单申请退款'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 验证订单状态是否为交易成功
+        if order.trade_status != Order.TRADE_STATUS_SUCCESS:
+            return Response(
+                {'error': '只能对交易成功的订单申请退款'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 更新订单状态为退款中
+        order.trade_status = Order.TRADE_STATUS_REFUND
+        order.save()
+
+        # 返回更新后的订单信息
+        serializer = OrderDetailSerializer(order)
+        return Response(serializer.data)
