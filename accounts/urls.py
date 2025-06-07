@@ -10,7 +10,8 @@ from .views import (
     BrowsedProductListView,
     UnfavoriteProductView,
     IsFavoriteProductView,
-    OrderCreateView
+    OrderCreateView,
+    CommentView
 )
 
 urlpatterns = [
@@ -37,4 +38,5 @@ urlpatterns = [
     path('interactions/unfavorite/', UnfavoriteProductView.as_view(), name='unfavorite-product'),
     path('interactions/is-favorite/', IsFavoriteProductView.as_view(), name='is-favorite-product'),
     path('orders/create/', OrderCreateView.as_view(), name='order-create'),
+    path('product/comments/', CommentView.as_view(), name='product-comments'),
 ]

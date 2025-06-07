@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, Product, Interaction, Order
+from .models import User, Product, Interaction, Order, Comment
 from datetime import datetime
 
 class UserSerializer(serializers.ModelSerializer):
@@ -95,3 +95,74 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = '__all__'
         read_only_fields = ['code', 'trade_time', 'create_time']
+
+class CommentSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source='user.id')
+    product_id = serializers.IntegerField(source='product.id')
+    parent_id = serializers.CharField(source='parent.id', required=False, allow_null=True, allow_blank=True)
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'product_id', 'user_id', 'parent_id', 'content', 'create_time']
+        read_only_fields = ['id', 'create_time']
+
+    def validate_parent_id(self, value):
+        """验证父级评论ID"""
+        if value in [None, '', 'null', 'None']:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("父级评论ID必须是有效的整数")
+
+    def validate(self, data):
+        """验证父级评论是否存在"""
+        parent_id = data.get('parent', {}).get('id')
+        if parent_id is not None:
+            try:
+                Comment.objects.get(id=parent_id)
+            except Comment.DoesNotExist:
+                raise serializers.ValidationError({"parent_id": "父级评论不存在"})
+        return data
+
+    def create(self, validated_data):
+        user = User.objects.get(id=validated_data['user']['id'])
+        product = Product.objects.get(id=validated_data['product']['id'])
+        parent = None
+        if 'parent' in validated_data and validated_data['parent'] and validated_data['parent'].get('id'):
+            parent = Comment.objects.get(id=validated_data['parent']['id'])
+        
+        comment = Comment.objects.create(
+            user=user,
+            product=product,
+            parent=parent,
+            content=validated_data['content']
+        )
+        return comment
+
+class CommentTreeSerializer(serializers.ModelSerializer):
+    """用于返回树形结构的评论序列化器"""
+    user_id = serializers.IntegerField(source='user.id')
+    username = serializers.CharField(source='user.username')
+    replies = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user_id', 'username', 'content', 'create_time', 'replies']
+
+    def get_replies(self, obj):
+        """获取评论的回复列表"""
+        # 只获取直接回复（一级回复）
+        replies = Comment.objects.filter(parent=obj).order_by('create_time')
+        return CommentTreeSerializer(replies, many=True).data
+
+class CommentListSerializer(serializers.ModelSerializer):
+    """用于列表查询的评论序列化器"""
+    user_id = serializers.IntegerField(source='user.id')
+    username = serializers.CharField(source='user.username')
+    product_id = serializers.IntegerField(source='product.id')
+    parent_id = serializers.IntegerField(source='parent.id', required=False, allow_null=True)
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'product_id', 'user_id', 'username', 'parent_id', 'content', 'create_time']

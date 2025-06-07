@@ -9,11 +9,12 @@ from django.conf import settings
 from django.db.models import Q
 import os
 from datetime import datetime
-from .models import User, Product, Interaction, Order
+from .models import User, Product, Interaction, Order, Comment
 from .serializers import (
     UserSerializer, RegisterSerializer, LoginSerializer, 
-    UserUpdateSerializer, ProductSerializer, InteractionSerializer, OrderSerializer
+    UserUpdateSerializer, ProductSerializer, InteractionSerializer, OrderSerializer, CommentSerializer, CommentTreeSerializer
 )
+from rest_framework import serializers
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -434,3 +435,65 @@ class OrderCreateView(generics.CreateAPIView):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+class CommentView(generics.ListCreateAPIView):
+    """商品评论视图：支持创建评论和获取评论列表"""
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    serializer_class = CommentSerializer
+    queryset = Comment.objects.all()
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
+
+    def get_serializer_class(self):
+        """根据请求方法返回不同的序列化器"""
+        if self.request.method == 'GET':
+            return CommentTreeSerializer
+        return CommentSerializer
+
+    def get_queryset(self):
+        """获取评论列表"""
+        # 从请求体中获取product_id
+        product_id = self.request.data.get('product_id')
+        
+        if not product_id:
+            raise serializers.ValidationError({
+                'product_id': '必须提供商品ID'
+            })
+        
+        # 验证商品是否存在
+        try:
+            Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            raise serializers.ValidationError({
+                'product_id': '商品不存在'
+            })
+        except ValueError:
+            raise serializers.ValidationError({
+                'product_id': '商品ID必须是有效的整数'
+            })
+        
+        # 只获取一级评论（parent为null的评论）
+        return Comment.objects.filter(
+            product_id=product_id,
+            parent__isnull=True
+        ).order_by('-create_time')
+
+    def list(self, request, *args, **kwargs):
+        """重写list方法以处理验证错误"""
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        except serializers.ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
+    def create(self, request, *args, **kwargs):
+        """创建评论"""
+        # 创建请求数据的可变副本
+        data = request.data.copy()
+        # 设置用户ID
+        data['user_id'] = request.user.id
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
