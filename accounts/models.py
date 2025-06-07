@@ -108,11 +108,13 @@ class Order(models.Model):
     TRADE_STATUS_SUCCESS = 1
     TRADE_STATUS_FAILED = 2
     TRADE_STATUS_REFUND = 3
+    TRADE_STATUS_REVIEW = 4
     TRADE_STATUS_CHOICES = [
         (TRADE_STATUS_PENDING, '待交易'),
         (TRADE_STATUS_SUCCESS, '交易成功'),
         (TRADE_STATUS_FAILED, '交易失败'),
         (TRADE_STATUS_REFUND, '退款中'),
+        (TRADE_STATUS_REVIEW, '退款成功'),
     ]
 
     code = models.CharField(max_length=255, null=True, unique=True, verbose_name='订单号')

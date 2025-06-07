@@ -610,3 +610,84 @@ class SellOrderListView(generics.ListAPIView):
         return Order.objects.filter(
             product__user=self.request.user  # 通过商品关联到卖家
         ).select_related('product', 'product__user', 'buyer').order_by('-create_time')
+
+class ReviewOrderView(APIView):
+    """审核订单视图"""
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
+
+    def post(self, request):
+        # 获取订单编号
+        order_id = request.data.get('order_id')
+        if not order_id:
+            return Response(
+                {'error': '必须提供订单编号'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            order_id = int(order_id)
+        except ValueError:
+            return Response(
+                {'error': '订单编号必须是有效的整数'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 获取订单
+        try:
+            order = Order.objects.select_related('product').get(id=order_id)
+        except Order.DoesNotExist:
+            return Response(
+                {'error': '订单不存在'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 验证是否是自己的商品订单
+        if order.product.user != request.user:
+            return Response(
+                {'error': '无权审核此订单'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 验证订单状态是否为待交易
+        if order.trade_status != Order.TRADE_STATUS_PENDING:
+            return Response(
+                {'error': '只能审核待交易的订单'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 获取审核结果
+        is_approved = request.data.get('is_approved')
+        if is_approved is None:
+            return Response(
+                {'error': '必须提供审核结果'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            is_approved = bool(is_approved)
+        except ValueError:
+            return Response(
+                {'error': '审核结果必须是布尔值'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 更新订单状态
+        if is_approved:
+            order.trade_status = Order.TRADE_STATUS_SUCCESS
+            # 交易成功，更新商品库存
+            if order.product.inventory is not None:
+                order.product.inventory -= 1
+                order.product.save()
+        else:
+            order.trade_status = Order.TRADE_STATUS_FAILED
+            # 交易失败，恢复商品库存
+            if order.product.inventory is not None:
+                order.product.inventory += 1
+                order.product.save()
+
+        order.save()
+
+        # 返回更新后的订单信息
+        serializer = OrderDetailSerializer(order)
+        return Response(serializer.data)
